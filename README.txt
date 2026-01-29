@@ -264,3 +264,74 @@ if name == "main":
             }
         }
     }
+
+
+
+
+
+        APIClient
+
+
+
+// ApiClient.cs
+using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace WpfApp67
+{
+    public class ApiClient
+    {
+        private readonly HttpClient _httpClient;
+        private string _adminToken;
+
+        private static readonly JsonSerializerOptions JsonOpts = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        public ApiClient(string baseUrl = "http://127.0.0.1:8000")
+        {
+            _httpClient = new HttpClient()
+            {
+                BaseAddress = new Uri(baseUrl)
+            };
+        }
+
+        public void SetAdminToken(string token)
+        {
+            _adminToken = token;
+            _httpClient.DefaultRequestHeaders.Clear();
+            if (!string.IsNullOrEmpty(_adminToken))
+            {
+                _httpClient.DefaultRequestHeaders.Add("X-Admin-Token", _adminToken);
+            }
+        }
+
+        public async Task<bool> AdminLoginAsync(string login, string password)
+        {
+            var req = new AdminLoginRequest { login = login, password = password };
+            var json = JsonSerializer.Serialize(req, JsonOpts);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await _httpClient.PostAsync("/login/admin", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception("Ошибка авторизации");
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<AdminLoginResponse>(responseJson, JsonOpts);
+            
+            if (result == null || string.IsNullOrEmpty(result.token))
+            {
+                throw new Exception("Сервер вернул пустой токен");
+            }
+            
+            SetAdminToken(result.token);
+            return true;
+        }
+    }
+}
