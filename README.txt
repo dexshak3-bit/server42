@@ -1,857 +1,621 @@
-# server42
-
-
-import os
-import json
-import pathlib
-import random
-
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.params import Depends
-from pydantic import BaseModel, Field
-import uvicorn
-from datetime import date
-
-app = FastAPI(title="autopark")
-
-filePath = pathlib.Path("data")
-driversFile = filePath/"drivers.json"
-carsFile = filePath/"cars.json"
-parkingFile = filePath/"parking.json"
-
-
-adminLogin = "admin1"
-adminPassword = "1234"
-adminToken = "qwerty"
-
-class AdminLoginRequest(BaseModel):
-    login: str
-    password: str
-
-class AdminLoginResponse(BaseModel):
-    token: str
-
-class CarCreateRequest(BaseModel):
-    vehicle_id: int
-    brand: str
-    model: str
-    license_plate: str
-    year: str
-    color: str
-
-class DriverCreateRequest(BaseModel):
-    driverid: int
-    fio: str
-    phone: str
-    category: str
-
-class ParkingCreateRequest(BaseModel):
-    driverid: int
-    carid: int
-    parkingid: int
-    start_date: date
-    cost: str
-
-def loadfile(path: pathlib.Path):
-    if not path.exists():
-        return []
-    text = path.read_text(encoding="Utf-8").strip()
-    return json.loads(text) if text else []
-
-def savefile(path: pathlib.Path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False), encoding="Utf-8")
-
-def checkadmin(x_admin_token: str | None = Header(None, alias="X-Admin-Token")):
-    if x_admin_token !=adminToken:
-        raise HTTPException(status_code=401, detail="Токен не соответсвует")
-
-@app.get("/cars")
-def getcars():
-    return loadfile(carsFile)
-
-@app.get("/drivers")
-def getdrivers():
-    return loadfile(driversFile)
-
-@app.get("/parking")
-def getparking():
-    return loadfile(parkingFile)
-
-@app.post("/login/admin", response_model=AdminLoginResponse)
-def authorizateadmin(request: AdminLoginRequest):
-    if request.login != adminLogin or request.password != adminPassword:
-        raise HTTPException(status_code=401, detail="неверный логин или пароль")
-    return AdminLoginResponse(token= adminToken)
-
-@app.post("/cars", response_model=CarCreateRequest, dependencies=[Depends(checkadmin)])
-def addnewcard(request: CarCreateRequest):
-    cars = loadfile(carsFile)
-    cars.append(request.model_dump())
-    savefile(carsFile, cars)
-    return request
-
-@app.post("/drivers", response_model=DriverCreateRequest, dependencies=[Depends(checkadmin)])
-def addnewdriver(request: DriverCreateRequest):
-    drivers = loadfile(driversFile)
-    existing_id = {i.get("driverid") for i in drivers if i.get("driverid") is not None}
-    while True:
-        new_id = random.randint(10000, 99999)
-        if new_id not in existing_id:
-            break
-
-    new_driver = request.model_dump()
-    new_driver["driverid"] = new_id
-    drivers.append(new_driver)
-    savefile(driversFile, drivers)
-    return new_driver
-
-@app.post("/parking", response_model=ParkingCreateRequest, dependencies=[Depends(checkadmin)])
-def addnewparking(request: ParkingCreateRequest):
-    parkings = loadfile(parkingFile)
-
-    parking = {
-        "driverid": request.driverid,
-        "carid": request.carid,
-        "parkingid": request.parkingid,
-        "start_date": request.start_date.isoformat(),
-        "cost": request.cost
-    }
-
-    parkings.append(parking)
-    savefile(parkingFile, parkings)
-    return parking
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
-
-
-
-
-
-
-
-    ApiClient:
-
-
+#Models
+Category.cs
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Net.Cache;
-using System.Net.Http;
-using System.Text;
-using System.Threading.Tasks;
-using System.Text.Json;
 
-namespace exam9
+namespace ReadApp.Models;
+
+public partial class Category
 {
-    public class ApiClient
-    {
-        private readonly HttpClient _htppClient;
-        private string _adminToken;
+    public int Idcategory { get; set; }
 
-        private static readonly JsonSerializerOptions JsonOpts = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        };
-        public ApiClient(string baseUrl = "http://127.0.0.1:8000")
-        {
-            _htppClient = new HttpClient()
-            {
-                BaseAddress = new Uri(baseUrl)
-            };
-        }
-        public void SetAdminToken(string token)
-        {
-            _adminToken = token;
-            _htppClient.DefaultRequestHeaders.Clear();
-            if (!string.IsNullOrEmpty(_adminToken))
-            {
-                _htppClient.DefaultRequestHeaders.Add("X-Admin-Token", _adminToken);
-            }    
-        }
-        public async Task<bool> AdminLoginAsync(string login, string password)
-        {
-            var req = new AdminLoginRequest { login = login, password = password };
-            var json = JsonSerializer.Serialize(req, JsonOpts);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+    public string? Category1 { get; set; }
 
-            var response = await _htppClient.PostAsync("/login/admin", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка авторизации");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            var result = JsonSerializer.Deserialize<AdminLoginResponse>(responseJson, JsonOpts);
-            if (result == null || string.IsNullOrEmpty(result.token))
-            {
-                throw new Exception("Сервер вернул пустой токен");
-            }
-            SetAdminToken(result.token);
-            return true;
-        }
-        public async Task<CarCreateRequest> AddCarAsync(CarCreateRequest car)
-        {
-            var json = JsonSerializer.Serialize(car, JsonOpts);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await _htppClient.PostAsync("/cars", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка добавления машины");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return  JsonSerializer.Deserialize<CarCreateRequest>(responseJson, JsonOpts) ?? car;
-        }
-        public async Task<List<CarCreateRequest>> GetCarAsync()
-        {
-
-            var response = await _htppClient.GetAsync("/cars");
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка загрузки машины");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<List<CarCreateRequest>>(responseJson, JsonOpts) ?? new List<CarCreateRequest>();
-        }
-                
-        public async Task<DriverCreateRequest> AddDriverAsync(DriverCreateRequest driver)
-        {
-            var json = JsonSerializer.Serialize(driver, JsonOpts);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await _htppClient.PostAsync("/drivers", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка добавления водителя");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<DriverCreateRequest>(responseJson, JsonOpts) ?? driver;
-        }
-        public async Task<List<DriverCreateRequest>> GetDriverAsync()
-        {
-
-            var response = await _htppClient.GetAsync("/drivers");
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка загрузки водителя");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<List<DriverCreateRequest>>(responseJson, JsonOpts) ?? new List<DriverCreateRequest>();
-        }
-        public async Task<ParkingCreateRequest> AddParkingAsync(ParkingCreateRequest parking)
-        {
-            var json = JsonSerializer.Serialize(parking, JsonOpts);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            var response = await _htppClient.PostAsync("/parking", content);
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка добавления парковачных мест");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<ParkingCreateRequest>(responseJson, JsonOpts) ?? parking;
-        }
-        public async Task<List<ParkingCreateRequest>> GetParkingAsync()
-        {
-
-            var response = await _htppClient.GetAsync("/parking");
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Ошибка загрузки парковачных мест");
-            }
-            var responseJson = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<List<ParkingCreateRequest>>(responseJson, JsonOpts) ?? new List<ParkingCreateRequest>();
-        }
-    }
+    public virtual ICollection<Product> Products { get; set; } = new List<Product>();
 }
-
-
-
-    Models:
-
-
+creator.cs
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace exam9
+namespace ReadApp.Models;
+
+public partial class Creator
 {
-    public static class ApplicationState
-    {
-        public static ApiClient ApiClient { get; set; }
-    }
-    public class AdminLoginRequest
-    {
-        public string login { get; set; }
-        public string password { get; set; }
-    }
-    public class AdminLoginResponse
-    {
-        public string token { get; set; }
-    }
-    public class CarCreateRequest
-    {
-        public int vehicle_id { get; set; }
-        public string brand { get; set; }
-        public string model { get; set; }
-        public string license_plate { get; set; }
-        public string year { get; set; }
-        public string color { get; set; }
-    }
-    public class DriverCreateRequest
-    {
-        public int driverid { get; set; }
-        public string fio { get; set; }
-        public string phone { get; set; }
-        public string category { get; set; }
-    }
-    public class ParkingCreateRequest
-    {
-        public int driverid { get; set; }
-        public int carid { get; set; }
-        public int parkingid { get; set; }
-        public string start_date { get; set; }
-        public string cost { get; set; }
-    }
+    public int Idcreator { get; set; }
 
+    public string? Creator1 { get; set; }
+
+    public virtual ICollection<Product> Products { get; set; } = new List<Product>();
 }
+Order.cs
 
-
-
-     MainWindow Grid:
-
-
-    <Grid>
-    <TextBlock Text="Окно авторизации" FontSize="22" TextAlignment="Center" Margin="282,0,282,333" Height="39" VerticalAlignment="Bottom"></TextBlock>
-    <TextBox x:Name="logintxt" Margin="282,0,251,252" BorderBrush="Black" Height="51" VerticalAlignment="Bottom"></TextBox>
-    <TextBox x:Name="passwordtxt" Margin="282,0,251,166" BorderBrush="Black" Height="51" VerticalAlignment="Bottom"></TextBox>
-    <Button x:Name="authorizatebutton" Content="Войти" BorderBrush="Black" Background="Black" Foreground="White" Margin="350,0,319,83" Click="authorizatebutton_Click" Height="45" VerticalAlignment="Bottom"></Button>
-    <TextBlock Text="Логин:" FontSize="14" TextAlignment="Center" Margin="208,0,523,258" Height="39" VerticalAlignment="Bottom"></TextBlock>
-    <TextBlock Text="Пароль:" FontSize="14" TextAlignment="Center" Margin="213,0,528,167" Height="40" VerticalAlignment="Bottom"></TextBlock>
-    </Grid>
-
-
-
-      c# MainWindow:
-
-      
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 
-namespace exam9
+namespace ReadApp.Models;
+
+public partial class Order
 {
-    /// <summary>
-    /// Логика взаимодействия для MainWindow.xaml
-    /// </summary>
-    public partial class MainWindow : Window
-    {
-        private readonly ApiClient _apiClient;
-        public MainWindow()
-        {
-            InitializeComponent();
-            _apiClient = new ApiClient();
+    public int Idorders { get; set; }
 
-        }
+    public DateOnly? Dateorder { get; set; }
 
-        private async void authorizatebutton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                await _apiClient.AdminLoginAsync(logintxt.Text, passwordtxt.Text);
-                ApplicationState.ApiClient = _apiClient;
-                MessageBox.Show("Добро пожаловать!");
-                Window1 a = new Window1();
-                a.Show();
-                this.Close();
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
-    }
+    public DateOnly? Datearrive { get; set; }
+
+    public int? Adress { get; set; }
+
+    public int? Client { get; set; }
+
+    public int? Code { get; set; }
+
+    public int? Status { get; set; }
+
+    public virtual Point? AdressNavigation { get; set; }
+
+    public virtual User? ClientNavigation { get; set; }
+
+    public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+
+    public virtual Status? StatusNavigation { get; set; }
 }
 
+OrderItem.cs
 
-        Window1 Grid:
-        <Grid>
-        <Button x:Name="addnewdriverbutton" Content="Добавить нового пользователя" Margin="156,0,127,291" Height="60" VerticalAlignment="Bottom" Click="addnewdriverbutton_Click"></Button>
-        <Button x:Name="addnewcarbutton" Content="Добавить новый автомобилб" Margin="156,0,127,192" Height="60" VerticalAlignment="Bottom" Click="addnewcarbutton_Click"></Button>
-        <Button x:Name="addnewparkingbutton" Content="Выдать новое парковочное место" Margin="156,0,127,83" Height="60" VerticalAlignment="Bottom" Click="addnewparkingbutton_Click"></Button>
-        </Grid>
-
-
-
-
-
-
-
-    Window1 C#:
-    using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
-namespace exam9
+namespace ReadApp.Models;
+
+public partial class OrderItem
 {
-    /// <summary>
-    /// Логика взаимодействия для Window1.xaml
-    /// </summary>
-    public partial class Window1 : Window
-    {
-        public Window1()
-        {
-            InitializeComponent();
-        }
+    public int IdorderItems { get; set; }
 
-        private void addnewdriverbutton_Click(object sender, RoutedEventArgs e)
-        {
-            Window2 a = new Window2();
-            a.Show();
-            this.Close();
-        }
+    public int? Idorder { get; set; }
 
-        private void addnewcarbutton_Click(object sender, RoutedEventArgs e)
-        {
-            Window3 a = new Window3();
-            a.Show();
-            this.Close();
-        }
+    public int? Article { get; set; }
 
-        private void addnewparkingbutton_Click(object sender, RoutedEventArgs e)
-        {
-            Window4 a = new Window4();
-            a.Show();
-            this.Close();
-        }
-    }
+    public int? Count { get; set; }
+
+    public virtual Product? ArticleNavigation { get; set; }
+
+    public virtual Order? IdorderNavigation { get; set; }
 }
 
+Point.cs
 
-
-
-
-
-        Window2 Grid:
-        <Grid>
-    <Button x:Name="exitbutton" Content="Выйти" Height="45" VerticalAlignment="Top" HorizontalAlignment="Left" Width="115" Click="exitbutton_Click"/>
-    <DataGrid x:Name="driverslist" Margin="177,0,44,242" Height="170" VerticalAlignment="Bottom"></DataGrid>
-    <TextBox x:Name="fiotxt" Margin="266,0,238,183" BorderBrush="Black" Height="34" VerticalAlignment="Bottom">
-    </TextBox>
-    <TextBox x:Name="phonetxt" MaxLength="11" Margin="266,0,238,128" BorderBrush="Black" Height="34" VerticalAlignment="Bottom"></TextBox>
-    <TextBox x:Name="categorytxt" Margin="266,0,238,71" BorderBrush="Black" Height="34" VerticalAlignment="Bottom"></TextBox>
-    <Button x:Name="addnewdriverbutton" Content="Добавить" BorderBrush="Black" Foreground="White" Background="Black" Margin="301,0,273,10" Height="45" VerticalAlignment="Bottom" Click="addnewdriverbutton_Click" ></Button>
-    <TextBlock Text="Список водителей:" Margin="408,0,276,412" Height="17" VerticalAlignment="Bottom"></TextBlock>
-    <TextBlock Text="ФИО:" Margin="266,0,418,220" Height="17" VerticalAlignment="Bottom"></TextBlock>
-    <TextBlock Text="Телефон:" Margin="266,0,418,161" Height="17" VerticalAlignment="Bottom"></TextBlock>
-    <TextBlock Text="Категория:" Margin="266,0,418,106" Height="17" VerticalAlignment="Bottom"></TextBlock>
-    </Grid>
-
-
-
-
-
-
-    Window2 C#:
-
-
-    using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
-namespace exam9
+namespace ReadApp.Models;
+
+public partial class Point
 {
-    /// <summary>
-    /// Логика взаимодействия для Window2.xaml
-    /// </summary>
-    public partial class Window2 : Window
-    {
-        public Window2()
-        {
-            InitializeComponent();
-            LoadDrivers();
-        }
+    public int Idpoints { get; set; }
 
-        private async void addnewdriverbutton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(fiotxt.Text) || string.IsNullOrEmpty(phonetxt.Text) || string.IsNullOrEmpty(categorytxt.Text))
-            {
-                MessageBox.Show("Заполните все поля");
-            }
-            var req = new DriverCreateRequest
-            {
-                fio = fiotxt.Text.Trim(),
-                phone = phonetxt.Text.Trim(),
-                category = categorytxt.Text.Trim()
-            };
-            try
-            {
-                var created = await ApplicationState.ApiClient.AddDriverAsync(req);
-                MessageBox.Show("водитель добавлен");
-                fiotxt.Text = "";
-                phonetxt.Text = "";
-                categorytxt.Text = "";
-                LoadDrivers();
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
-        private async void LoadDrivers()
-        {
-            try
-            {
-                var driver = await ApplicationState.ApiClient.GetDriverAsync();
-                driverslist.ItemsSource = driver;
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
+    public int? Mail { get; set; }
 
-        private void exitbutton_Click(object sender, RoutedEventArgs e)
-        {
-            Window1 a = new Window1();
-            a.Show();
-            this.Close();
-        }
-    }
+    public string? City { get; set; }
+
+    public string? Street { get; set; }
+
+    public int? Building { get; set; }
+
+    public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
 }
 
+Product.cs
 
-
-
-
-
-
-        Window3 Grid:
-         <Grid>
-     <Button x:Name="exitbutton" Content="Выйти" Height="40" VerticalAlignment="Top" HorizontalAlignment="Left" Width="91" Click="exitbutton_Click"/>
-     <DataGrid x:Name="carslist" Margin="165,0,71,274" Height="140" VerticalAlignment="Bottom"></DataGrid>
-     <TextBox x:Name="brandtxt" Margin="76,0,448,202" BorderBrush="Black" Height="35" VerticalAlignment="Bottom"></TextBox>
-     <TextBox x:Name="modeltxt" Margin="76,0,448,143" BorderBrush="Black" Height="35" VerticalAlignment="Bottom"></TextBox>
-     <TextBox x:Name="licenseplatetxt" Margin="414,0,110,202" BorderBrush="Black" Height="35" VerticalAlignment="Bottom"></TextBox>
-     <TextBox x:Name="colortxt" Margin="262,0,262,72" BorderBrush="Black" Height="35" VerticalAlignment="Bottom"></TextBox>
-     <TextBox x:Name="yeartxt" MaxLength="4" Margin="414,0,110,143" BorderBrush="Black" Height="35" VerticalAlignment="Bottom"></TextBox>
-     <Button x:Name="addnewcarbutton" Content="Добавить" Margin="302,0,320,10" BorderBrush="Black" Background="Black" Foreground="White" Height="40" VerticalAlignment="Bottom" Click="addnewcarbutton_Click" ></Button>
-     <TextBlock Text="Список машин:" Margin="396,0,302,413" Height="21" VerticalAlignment="Bottom"></TextBlock>
-     <TextBlock Text="Марка машины:" Margin="76,0,600,237" Height="21" VerticalAlignment="Bottom"></TextBlock>
-     <TextBlock Text="Цвет машины:" Margin="262,0,414,107" Height="21" VerticalAlignment="Bottom"></TextBlock>
-     <TextBlock Text="Модель машины:" Margin="76,0,600,178" Height="21" VerticalAlignment="Bottom"></TextBlock>
-     <TextBlock Text="Гос-номер машины:" Margin="414,0,262,239" Height="21" VerticalAlignment="Bottom"></TextBlock>
-     <TextBlock Text="Год-выпуска машины:" Margin="414,0,262,176" Height="21" VerticalAlignment="Bottom"></TextBlock>
-     </Grid>
-
-
-
-
-        Window3 C#:
-
-
-        using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 
-namespace exam9
+namespace ReadApp.Models;
+
+public partial class Product
 {
-    /// <summary>
-    /// Логика взаимодействия для Window3.xaml
-    /// </summary>
-    public partial class Window3 : Window
-    {
-        public Window3()
-        {
-            InitializeComponent();
-            LoadCars();
-        }
+    public int Idproducts { get; set; }
 
-        private async void addnewcarbutton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(brandtxt.Text) || string.IsNullOrEmpty(modeltxt.Text) || string.IsNullOrEmpty(colortxt.Text) || string.IsNullOrEmpty(yeartxt.Text)|| string.IsNullOrEmpty(licenseplatetxt.Text))
-            {
-                MessageBox.Show("Заполните все поля");
-            }
-            try
-            {
-                var cars = await ApplicationState.ApiClient.GetCarAsync();
-                int maxId = 0;
-                if (cars !=null && cars.Count > 0)
-                {
-                    maxId = cars.Max(u => u.vehicle_id);
-                }
-                int newid = maxId + 1;
-                var req = new CarCreateRequest
-                {
-                    vehicle_id = newid,
-                    brand = brandtxt.Text.Trim(),
-                    model = modeltxt.Text.Trim(),
-                    license_plate = licenseplatetxt.Text.Trim(),
-                    year = yeartxt.Text.Trim(),
-                    color = colortxt.Text.Trim()
-                };
-                var created = await ApplicationState.ApiClient.AddCarAsync(req);
-                MessageBox.Show("Машина добавлена");
-                brandtxt.Text = "";
-                modeltxt.Text = "";
-                licenseplatetxt.Text = "";
-                yeartxt.Text = "";
-                colortxt.Text = "";
-                LoadCars();
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
-        private async Task LoadCars()
-        {
-            try
-            {
-                var cars = await ApplicationState.ApiClient.GetCarAsync();
-                carslist.ItemsSource = cars;
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-            }
-        }
+    public string? Article { get; set; }
 
-        private void exitbutton_Click(object sender, RoutedEventArgs e)
-        {
-            Window1 a = new Window1();
-            a.Show();
-            this.Close();
-        }
-    }
+    public string? Product1 { get; set; }
+
+    public string? Publisher { get; set; }
+
+    public int? Creator { get; set; }
+
+    public int? Category { get; set; }
+
+    public int? Percent { get; set; }
+
+    public int? Count { get; set; }
+
+    public string? Description { get; set; }
+
+    public string? Photo { get; set; }
+
+    public virtual Category? CategoryNavigation { get; set; }
+
+    public virtual Creator? CreatorNavigation { get; set; }
+
+    public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
 }
 
 
+ReadBDContext.cs
 
+using System;
+using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
+using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
 
+namespace ReadApp.Models;
 
+public partial class ReadBdContext : DbContext
+{
+    public ReadBdContext()
+    {
+    }
 
+    public ReadBdContext(DbContextOptions<ReadBdContext> options)
+        : base(options)
+    {
+    }
 
-        Window4 Grid:
-        <Window x:Class="exam9.Window4"
+    public virtual DbSet<Category> Categories { get; set; }
+
+    public virtual DbSet<Creator> Creators { get; set; }
+
+    public virtual DbSet<Order> Orders { get; set; }
+
+    public virtual DbSet<OrderItem> OrderItems { get; set; }
+
+    public virtual DbSet<Point> Points { get; set; }
+
+    public virtual DbSet<Product> Products { get; set; }
+
+    public virtual DbSet<Role> Roles { get; set; }
+
+    public virtual DbSet<Status> Statuses { get; set; }
+
+    public virtual DbSet<User> Users { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseMySql("server=localhost;port=3306;user=root;password=1234;database=read_bd", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.5.0-mysql"));
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder
+            .UseCollation("utf8mb4_0900_ai_ci")
+            .HasCharSet("utf8mb4");
+
+        modelBuilder.Entity<Category>(entity =>
+        {
+            entity.HasKey(e => e.Idcategory).HasName("PRIMARY");
+
+            entity.ToTable("categories");
+
+            entity.Property(e => e.Idcategory)
+                .ValueGeneratedNever()
+                .HasColumnName("idcategory");
+            entity.Property(e => e.Category1)
+                .HasMaxLength(100)
+                .HasColumnName("category");
+        });
+
+        modelBuilder.Entity<Creator>(entity =>
+        {
+            entity.HasKey(e => e.Idcreator).HasName("PRIMARY");
+
+            entity.ToTable("creator");
+
+            entity.Property(e => e.Idcreator)
+                .ValueGeneratedNever()
+                .HasColumnName("idcreator");
+            entity.Property(e => e.Creator1)
+                .HasMaxLength(100)
+                .HasColumnName("creator");
+        });
+
+        modelBuilder.Entity<Order>(entity =>
+        {
+            entity.HasKey(e => e.Idorders).HasName("PRIMARY");
+
+            entity.ToTable("orders");
+
+            entity.HasIndex(e => e.Status, "afwegrh_idx");
+
+            entity.HasIndex(e => e.Adress, "fasfsag_idx");
+
+            entity.HasIndex(e => e.Client, "frewgerh_idx");
+
+            entity.Property(e => e.Idorders)
+                .ValueGeneratedNever()
+                .HasColumnName("idorders");
+            entity.Property(e => e.Adress).HasColumnName("adress");
+            entity.Property(e => e.Client).HasColumnName("client");
+            entity.Property(e => e.Code).HasColumnName("code");
+            entity.Property(e => e.Datearrive).HasColumnName("datearrive");
+            entity.Property(e => e.Dateorder).HasColumnName("dateorder");
+            entity.Property(e => e.Status).HasColumnName("status");
+
+            entity.HasOne(d => d.AdressNavigation).WithMany(p => p.Orders)
+                .HasForeignKey(d => d.Adress)
+                .HasConstraintName("fasfsag");
+
+            entity.HasOne(d => d.ClientNavigation).WithMany(p => p.Orders)
+                .HasForeignKey(d => d.Client)
+                .HasConstraintName("frewgerh");
+
+            entity.HasOne(d => d.StatusNavigation).WithMany(p => p.Orders)
+                .HasForeignKey(d => d.Status)
+                .HasConstraintName("afwegrh");
+        });
+
+        modelBuilder.Entity<OrderItem>(entity =>
+        {
+            entity.HasKey(e => e.IdorderItems).HasName("PRIMARY");
+
+            entity.ToTable("order_items");
+
+            entity.HasIndex(e => e.Article, "fsdgss_idx");
+
+            entity.HasIndex(e => e.Idorder, "sdfdssg_idx");
+
+            entity.Property(e => e.IdorderItems)
+                .ValueGeneratedNever()
+                .HasColumnName("idorder_items");
+            entity.Property(e => e.Article).HasColumnName("article");
+            entity.Property(e => e.Count).HasColumnName("count");
+            entity.Property(e => e.Idorder).HasColumnName("idorder");
+
+            entity.HasOne(d => d.ArticleNavigation).WithMany(p => p.OrderItems)
+                .HasForeignKey(d => d.Article)
+                .HasConstraintName("asfagd");
+
+            entity.HasOne(d => d.IdorderNavigation).WithMany(p => p.OrderItems)
+                .HasForeignKey(d => d.Idorder)
+                .HasConstraintName("sdfdssg");
+        });
+
+        modelBuilder.Entity<Point>(entity =>
+        {
+            entity.HasKey(e => e.Idpoints).HasName("PRIMARY");
+
+            entity.ToTable("points");
+
+            entity.Property(e => e.Idpoints)
+                .ValueGeneratedNever()
+                .HasColumnName("idpoints");
+            entity.Property(e => e.Building).HasColumnName("building");
+            entity.Property(e => e.City)
+                .HasMaxLength(45)
+                .HasColumnName("city");
+            entity.Property(e => e.Mail).HasColumnName("mail");
+            entity.Property(e => e.Street)
+                .HasMaxLength(45)
+                .HasColumnName("street");
+        });
+
+        modelBuilder.Entity<Product>(entity =>
+        {
+            entity.HasKey(e => e.Idproducts).HasName("PRIMARY");
+
+            entity.ToTable("products");
+
+            entity.HasIndex(e => e.Creator, "SCSDGFH_idx");
+
+            entity.HasIndex(e => e.Category, "asfadg_idx");
+
+            entity.Property(e => e.Idproducts)
+                .ValueGeneratedNever()
+                .HasColumnName("idproducts");
+            entity.Property(e => e.Article)
+                .HasMaxLength(45)
+                .HasColumnName("article");
+            entity.Property(e => e.Category).HasColumnName("category");
+            entity.Property(e => e.Count).HasColumnName("count");
+            entity.Property(e => e.Creator).HasColumnName("creator");
+            entity.Property(e => e.Description)
+                .HasMaxLength(500)
+                .HasColumnName("description");
+            entity.Property(e => e.Percent).HasColumnName("percent");
+            entity.Property(e => e.Photo)
+                .HasMaxLength(45)
+                .HasColumnName("photo");
+            entity.Property(e => e.Product1)
+                .HasMaxLength(255)
+                .HasColumnName("product");
+            entity.Property(e => e.Publisher)
+                .HasMaxLength(100)
+                .HasColumnName("publisher");
+
+            entity.HasOne(d => d.CategoryNavigation).WithMany(p => p.Products)
+                .HasForeignKey(d => d.Category)
+                .HasConstraintName("asfadg");
+
+            entity.HasOne(d => d.CreatorNavigation).WithMany(p => p.Products)
+                .HasForeignKey(d => d.Creator)
+                .HasConstraintName("SCSDGFH");
+        });
+
+        modelBuilder.Entity<Role>(entity =>
+        {
+            entity.HasKey(e => e.Idroles).HasName("PRIMARY");
+
+            entity.ToTable("roles");
+
+            entity.Property(e => e.Idroles)
+                .ValueGeneratedNever()
+                .HasColumnName("idroles");
+            entity.Property(e => e.Role1)
+                .HasMaxLength(200)
+                .HasColumnName("role");
+        });
+
+        modelBuilder.Entity<Status>(entity =>
+        {
+            entity.HasKey(e => e.Idstatuses).HasName("PRIMARY");
+
+            entity.ToTable("statuses");
+
+            entity.Property(e => e.Idstatuses)
+                .ValueGeneratedNever()
+                .HasColumnName("idstatuses");
+            entity.Property(e => e.Status1)
+                .HasMaxLength(45)
+                .HasColumnName("status");
+        });
+
+        modelBuilder.Entity<User>(entity =>
+        {
+            entity.HasKey(e => e.Idusers).HasName("PRIMARY");
+
+            entity.ToTable("users");
+
+            entity.HasIndex(e => e.Role, "dsafadg_idx");
+
+            entity.Property(e => e.Idusers)
+                .ValueGeneratedNever()
+                .HasColumnName("idusers");
+            entity.Property(e => e.Fname)
+                .HasMaxLength(45)
+                .HasColumnName("fname");
+            entity.Property(e => e.Login)
+                .HasMaxLength(45)
+                .HasColumnName("login");
+            entity.Property(e => e.Password)
+                .HasMaxLength(45)
+                .HasColumnName("password");
+            entity.Property(e => e.Role).HasColumnName("role");
+            entity.Property(e => e.Sname)
+                .HasMaxLength(45)
+                .HasColumnName("sname");
+            entity.Property(e => e.Tname)
+                .HasMaxLength(45)
+                .HasColumnName("tname");
+
+            entity.HasOne(d => d.RoleNavigation).WithMany(p => p.Users)
+                .HasForeignKey(d => d.Role)
+                .HasConstraintName("dsafadg");
+        });
+
+        OnModelCreatingPartial(modelBuilder);
+    }
+
+    partial void OnModelCreatingPartial(ModelBuilder modelBuilder);
+}
+
+Role.cs
+
+using System;
+using System.Collections.Generic;
+
+namespace ReadApp.Models;
+
+public partial class Role
+{
+    public int Idroles { get; set; }
+
+    public string? Role1 { get; set; }
+
+    public virtual ICollection<User> Users { get; set; } = new List<User>();
+}
+
+status.cs
+
+using System;
+using System.Collections.Generic;
+
+namespace ReadApp.Models;
+
+public partial class Role
+{
+    public int Idroles { get; set; }
+
+    public string? Role1 { get; set; }
+
+    public virtual ICollection<User> Users { get; set; } = new List<User>();
+}
+
+User.cs
+
+using System;
+using System.Collections.Generic;
+
+namespace ReadApp.Models;
+
+public partial class User
+{
+    public int Idusers { get; set; }
+
+    public int? Role { get; set; }
+
+    public string? Sname { get; set; }
+
+    public string? Fname { get; set; }
+
+    public string? Tname { get; set; }
+
+    public string? Login { get; set; }
+
+    public string? Password { get; set; }
+
+    public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
+
+    public virtual Role? RoleNavigation { get; set; }
+}
+
+#App.xaml
+
+<Application x:Class="ReadApp.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ReadApp"
+             StartupUri="Auth.xaml">
+    <Application.Resources>
+         
+    </Application.Resources>
+</Application>
+
+App.xaml.cs
+
+using System.Configuration;
+using System.Data;
+using System.Windows;
+
+namespace ReadApp
+{
+    /// <summary>
+    /// Interaction logic for App.xaml
+    /// </summary>
+    public partial class App : Application
+    {
+    }
+
+}
+
+AssemblyInfo.cs
+
+using System.Windows;
+
+[assembly: ThemeInfo(
+    ResourceDictionaryLocation.None,            //where theme specific resource dictionaries are located
+                                                //(used if a resource is not found in the page,
+                                                // or application resource dictionaries)
+    ResourceDictionaryLocation.SourceAssembly   //where the generic resource dictionary is located
+                                                //(used if a resource is not found in the page,
+                                                // app, or any theme specific resource dictionaries)
+)]
+
+Auth.xaml
+
+<Window x:Class="ReadApp.Auth"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:exam9"
+        xmlns:local="clr-namespace:ReadApp"
         mc:Ignorable="d"
-        Title="Окно оформления парковочного места" Height="550" Width="850">
+        Title="Auth" Height="450" Width="350">
     <Grid>
-        <Button x:Name="exitbutton" Content="Выйти" Height="47" VerticalAlignment="Top" HorizontalAlignment="Left" Width="105" Click="exitbutton_Click"/>
-        <DataGrid x:Name="parkinglist" Margin="155,0,49,370" Height="140" VerticalAlignment="Bottom"></DataGrid>
-        <DataGrid x:Name="driverslist" Margin="33,0,392,199" Height="111" VerticalAlignment="Bottom"></DataGrid>
-        <DataGrid x:Name="carslist" Margin="32,0,392,44" Height="119" VerticalAlignment="Bottom"></DataGrid>
-        <TextBox x:Name="driveridtxt" Margin="502,0,84,314" BorderBrush="Black" Height="35" VerticalAlignment="Bottom"></TextBox>
-        <TextBox x:Name="carirdtxt" Margin="502,0,84,254" BorderBrush="Black" Height="36" VerticalAlignment="Bottom"></TextBox>
-        <TextBox x:Name="costtxt" Margin="502,0,84,136" BorderBrush="Black" Height="36" VerticalAlignment="Bottom"></TextBox>
-        <DatePicker x:Name="startdatetxt" Margin="502,0,168,191" Height="38" VerticalAlignment="Bottom"></DatePicker>
-        <Button x:Name="addnewparkingbutton" Content="Добавить" Foreground="White" BorderBrush="Black" Background="Black" Margin="512,0,94,75" Height="48" VerticalAlignment="Bottom" Click="addnewparkingbutton_Click"></Button>
-        <TextBlock Text="Список арендованных парковчаных мест" Margin="356,0,250,505" Height="24" VerticalAlignment="Bottom"></TextBlock>
-        <TextBlock Text="Список машин:" Margin="33,0,706,163" Height="27" VerticalAlignment="Bottom">
-        </TextBlock>
-        <TextBlock Text="Список пользователей:" Margin="33,0,678,304" Height="27" VerticalAlignment="Bottom">
-        </TextBlock>
-        <TextBlock Text="id Водителя:" Margin="502,0,261,349" Height="16" VerticalAlignment="Bottom"></TextBlock>
-        <TextBlock Text="id Машины:" Margin="502,0,261,294" Height="16" VerticalAlignment="Bottom"></TextBlock>
-        <TextBlock Text="Дата начала аренды:" Margin="502,0,218,228" Height="17" VerticalAlignment="Bottom"></TextBlock>
-        <TextBlock Text="Цена Аренды:" Margin="502,0,261,176" Height="17" VerticalAlignment="Bottom"></TextBlock>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="25*"/>
+            <RowDefinition Height="58*"/>
+            <RowDefinition Height="56*"/>
+            <RowDefinition Height="86*"/>
+            <RowDefinition Height="138*"/>
+            <RowDefinition Height="71*"/>
+        </Grid.RowDefinitions>
 
+        <TextBlock Grid.Row="0" Text="Авторизация" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="20"/>
+
+        <TextBlock Text="Логин" Margin="0,25,0,29" Grid.RowSpan="2"/>
+        <TextBox x:Name="loginTB" Grid.Row="1" Margin="0,29,0,0" />
+
+        <TextBlock Text="Пароль" Margin="0,25,0,29" Grid.RowSpan="3"/>
+        <TextBox x:Name="passwordPB" Grid.Row="2" Margin="0,29,0,0" />
+
+        <Button x:Name="Authorization" Grid.Row="3" Margin="0,54,0,0" Content="Авторизоваться" Click="Authorization_Click"/>
+
+        <Button x:Name="Guest" Grid.Row="4" Margin="0,110,0,0" Content="Войти как гость" Click="Guest_Click"/>
+    </Grid>
+</Window>
+
+GuestWindow.xaml
+
+<Window x:Class="ReadApp.GuestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ReadApp"
+        mc:Ignorable="d"
+        Title="GuestWindow" Height="450" Width="800">
+    <Grid>
+        <ScrollViewer>
+            <WrapPanel x:Name="panel"/>
+        </ScrollViewer>
     </Grid>
 </Window>
 
 
+Products.xaml
 
+<Window x:Class="ReadApp.Products"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ReadApp"
+        mc:Ignorable="d"
+        Title="Products" Height="450" Width="800">
+    <Grid>
+        <ScrollViewer>
+            <WrapPanel x:Name="panel"/>
+        </ScrollViewer>
+    </Grid>
+</Window>
 
-            Window4 C#:
+ReadUserControl.xaml
 
+<UserControl x:Class="ReadApp.ReadUserControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:ReadApp"
+             mc:Ignorable="d" 
+             d:DesignHeight="200" d:DesignWidth="600">
+    <Border Margin="3" CornerRadius="15">
+    <Grid Margin="5">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="76*"/>
+            <ColumnDefinition Width="137*"/>
+            <ColumnDefinition Width="87*"/>
+        </Grid.ColumnDefinitions>
+        
+        <Border Grid.Column="0" BorderBrush="Gray" Margin="5">
+            <Image x:Name="Photo"/>
+        </Border>
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
+        <Border Grid.Column="1" BorderBrush="Gray" Margin="5">
+            <StackPanel>
+                <TextBlock x:Name="tbTitle"/>
+                <TextBlock x:Name="tbPublisher"/>
+                <TextBlock x:Name="tbCreator"/>
+                <TextBlock x:Name="tbCategory"/>
+                <TextBlock x:Name="tbDescription"/>
+                <TextBlock x:Name="tbPrice"/>
+                <TextBlock x:Name="tbCount"/>
+            </StackPanel>
+        </Border>
 
-namespace exam9
-{
-    /// <summary>
-    /// Логика взаимодействия для Window4.xaml
-    /// </summary>
-    public partial class Window4 : Window
-    {
-        public Window4()
-        {
-            InitializeComponent();
-            LoadDrivers();
-            LoadCars();
-            LoadParking();
-            startdatetxt.SelectedDate = DateTime.Now;
-        }
+        <Border Grid.Column="3" BorderBrush="Gray" Margin="5">
+            <TextBlock x:Name="tbPercent"/>
+        </Border>
+    </Grid>
+    </Border>
+</UserControl>
 
-        private async void addnewparkingbutton_Click(object sender, RoutedEventArgs e)
-        {
-            if (string.IsNullOrEmpty(driveridtxt.Text)|| string.IsNullOrEmpty(carirdtxt.Text) || string.IsNullOrEmpty(costtxt.Text))
-            {
-                MessageBox.Show("Заполните все поля");
-                return;
-            }
-            if (!int.TryParse(driveridtxt.Text, out var driverid))
-            {
-                MessageBox.Show("Id Водителя должно быть числом");
-                return;
-            }
-            if (!int.TryParse(carirdtxt.Text, out var carid))
-            {
-                MessageBox.Show("Id машины должно быть числом");
-                return;
-            }
-            try
-            {
-                var parking = await ApplicationState.ApiClient.GetParkingAsync();
-                int maxId = 0;
-                if (parking !=null && parking.Count > 0)
-                {
-                    maxId = parking.Max(u => u.parkingid);
-                }
-                int newId = maxId + 1;
-                var drivers = await ApplicationState.ApiClient.GetDriverAsync();
-                if (!drivers.Any(u => u.driverid == driverid))
-                {
-                    MessageBox.Show("Такого водителя нету");
-                    return;
-                }
-                var cars = await ApplicationState.ApiClient.GetCarAsync();
-                if (!cars.Any(u => u.vehicle_id == carid))
-                {
-                    MessageBox.Show("Такой машины нету");
-                    return;
-                }
-                var req = new ParkingCreateRequest
-                {
-                    parkingid = newId,
-                    carid = carid,
-                    driverid = driverid,
-                    start_date = startdatetxt.SelectedDate.Value.ToString("yyyy-MM-dd"),
-                    cost = costtxt.Text.Trim()
-                };
-                await ApplicationState.ApiClient.AddParkingAsync(req);
-                MessageBox.Show("парковочное место арендовано");
-                carirdtxt.Text = "";
-                driveridtxt.Text = "";
-                costtxt.Text = "";
-                LoadParking();
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-                return;
-            }
-        }
-        private async void LoadDrivers()
-        {
-            try
-            {
-                var created = await ApplicationState.ApiClient.GetDriverAsync();
-                driverslist.ItemsSource = created;
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-                return;
-            }
-        }
-        private async void LoadCars()
-        {
-            try
-            {
-                var created = await ApplicationState.ApiClient.GetCarAsync();
-                carslist.ItemsSource = created;
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-                return;
-            }
-        }
-        private async void LoadParking()
-        {
-            try
-            {
-                var created = await ApplicationState.ApiClient.GetParkingAsync();
-                parkinglist.ItemsSource = created;
-            }
-            catch(Exception ex)
-            {
-                MessageBox.Show(ex.Message);
-                return;
-            }
-        }
-
-        private void exitbutton_Click(object sender, RoutedEventArgs e)
-        {
-            Window1 a = new Window1();
-            a.Show();
-            this.Close();
-        }
-    }
-}
-
-       
